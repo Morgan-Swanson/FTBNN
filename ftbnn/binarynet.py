@@ -80,16 +80,20 @@ def train_model(data, model):
     )
 
 def plot_results(trained_model):
-    plt.plot(trained_model.history['acc'])
-    plt.plot(trained_model.history['val_acc'])
+    plt.plot(trained_model.history['accuracy'])
+    plt.plot(trained_model.history['val_accuracy'])
     plt.title('model accuracy')
     plt.ylabel('accuracy')
     plt.xlabel('epoch')
     plt.legend(['train', 'test'], loc='upper left')
 
-    print(np.max(trained_model.history['acc']))
-    print(np.max(trained_model.history['val_acc']))
+    print(np.max(trained_model.history['accuracy']))
+    print(np.max(trained_model.history['val_accuracy']))
 
 
 if __name__ == "__main__":
+    #required to run on some systems
+    config = tf.compat.v1.ConfigProto()
+    config.gpu_options.allow_growth = True
+    session = tf.compat.v1.Session(config=config)
     plot_results(train_model(preprocess_data(), build_model()))
