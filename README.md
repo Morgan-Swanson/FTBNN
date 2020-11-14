@@ -1,9 +1,12 @@
 # FTBNN
 A Fault Tolerant Binarized Neural Network
 
-## Testing
+### Virtual Environment
 	python3 -m venv ./venv
 	source ./venv/bin/activate
+
+### Installation
 	pip install -e .
-	python ./test/test_bnn.py
-	deactivate
+
+### Test
+	python ./test/binarynet_test.py

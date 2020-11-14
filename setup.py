@@ -4,7 +4,7 @@ with open("README.md", "r") as fh:
     long_description = fh.read()
 
 setuptools.setup(
-    name="FTBNN", # Replace with your own username
+    name="ftbnn",
     version="0.0.1",
     author="Tristan Chutka and Morgan Swanson",
     author_email="msswanso@calpoly.edu",
@@ -12,7 +12,14 @@ setuptools.setup(
     long_description=long_description,
     long_description_content_type="text/markdown",
     url="https://github.com/Morgan-Swanson/FTBNN",
-    packages=setuptools.find_packages(),
+    packages=setuptools.find_packages(include=['ftbnn']),
+    install_requires=[
+        'TensorFI',
+        'tensorflow',
+        'larq',
+        'matplotlib',
+        'keras',
+    ],
     classifiers=[
         "Programming Language :: Python :: 3",
         "License :: OSI Approved :: MIT License",
