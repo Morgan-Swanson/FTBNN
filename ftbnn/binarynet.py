@@ -105,7 +105,7 @@ def plot_results(trained_model):
     print(np.max(trained_model.history['accuracy']))
     print(np.max(trained_model.history['val_accuracy']))
 
-def save_model(trained_model, path="./"):
+def save_model(trained_model, path="./models/"):
     tf.compat.v1.logging.set_verbosity(tf.compat.v1.logging.FATAL)
     tf.keras.models.save_model(
         trained_model,
@@ -117,7 +117,7 @@ def save_model(trained_model, path="./"):
         options=None,
     )
 
-def load_model(path="./"):
+def load_model(path="./models/"):
     return tf.keras.models.load_model(path + 'ftbnn_model.tf')
 
 if __name__ == "__main__":
