@@ -90,10 +90,23 @@ def plot_results(trained_model):
     print(np.max(trained_model.history['accuracy']))
     print(np.max(trained_model.history['val_accuracy']))
 
+def save_model(trained_model):
+    tf.keras.models.save_model(
+        trained_model,
+        './ftbnn_model.tf',
+        overwrite=True,
+        include_optimizer=True,
+        save_format='tf',
+        signatures=None,
+        options=None,
+    )
 
 if __name__ == "__main__":
     #required to run on some systems
     config = tf.compat.v1.ConfigProto()
     config.gpu_options.allow_growth = True
     session = tf.compat.v1.Session(config=config)
-    plot_results(train_model(preprocess_data(), build_model()))
+    model = build_model()
+    save_model(model)
+    trained_model = train_model(preprocess_data(), model)
+    plot_results(trained_model)
