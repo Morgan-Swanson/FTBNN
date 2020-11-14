@@ -1,0 +1,29 @@
+import setuptools
+
+with open("README.md", "r") as fh:
+    long_description = fh.read()
+
+setuptools.setup(
+    name="ftbnn",
+    version="0.0.1",
+    author="Tristan Chutka and Morgan Swanson",
+    author_email="msswanso@calpoly.edu",
+    description="A fault tolerant binarized neural network",
+    long_description=long_description,
+    long_description_content_type="text/markdown",
+    url="https://github.com/Morgan-Swanson/FTBNN",
+    packages=setuptools.find_packages(include=['ftbnn']),
+    install_requires=[
+        'TensorFI',
+        'tensorflow',
+        'larq',
+        'matplotlib',
+        'keras',
+    ],
+    classifiers=[
+        "Programming Language :: Python :: 3",
+        "License :: OSI Approved :: MIT License",
+        "Operating System :: OS Independent",
+    ],
+    python_requires='>=3.6',
+)
