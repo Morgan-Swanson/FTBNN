@@ -5,8 +5,8 @@ import matplotlib.pyplot as plt
 from sklearn.model_selection import train_test_split
 
 def preprocess_data():
+    tf.compat.v1.logging.set_verbosity(tf.compat.v1.logging.FATAL)
     num_classes = 10
-
     (train_images, train_labels), (test_images, test_labels) = tf.keras.datasets.cifar10.load_data()
 
     train_images = train_images.reshape((50000, 32, 32, 3)).astype("float32")
@@ -20,6 +20,7 @@ def preprocess_data():
     return ((train_images, train_labels), (test_images, test_labels))
 
 def build_model():
+    tf.compat.v1.logging.set_verbosity(tf.compat.v1.logging.FATAL)
     # All quantized layers except the first will use the same options
     kwargs = dict(input_quantizer="ste_sign",
                   kernel_quantizer="ste_sign",
@@ -64,13 +65,15 @@ def build_model():
         tf.keras.layers.Activation("softmax")
     ])
 
-def train_model(training_data, model, epochs=10):
+def train_model(training_data, model, epochs=10, batch_size=50):
+    tf.compat.v1.logging.set_verbosity(tf.compat.v1.logging.FATAL)
     images, labels = training_data
     train_images, validation_images, train_labels, validation_labels = \
         train_test_split(images,
                          labels,
                          test_size=0.2,
                          random_state=42,
+                         shuffle=True,
                          stratify=labels)
     model.compile(
         tf.keras.optimizers.Adam(lr=0.01, decay=0.0001),
@@ -80,18 +83,16 @@ def train_model(training_data, model, epochs=10):
     return model.fit(
         train_images,
         train_labels,
-        batch_size=50,
+        batch_size=batch_size,
         epochs=epochs,
         validation_data=(validation_images, validation_labels),
         shuffle=True
     )
 
-#Todo, Add testing function
 def test_model(testing_data, model):
     testing_images, testing_labels = testing_data
-    return
-
-
+    test_loss, test_acc = model.evaluate(testing_images, testing_labels)
+    return test_acc
 
 def plot_results(trained_model):
     plt.plot(trained_model.history['accuracy'])
@@ -104,16 +105,20 @@ def plot_results(trained_model):
     print(np.max(trained_model.history['accuracy']))
     print(np.max(trained_model.history['val_accuracy']))
 
-def save_model(trained_model):
+def save_model(trained_model, path="./"):
+    tf.compat.v1.logging.set_verbosity(tf.compat.v1.logging.FATAL)
     tf.keras.models.save_model(
         trained_model,
-        './ftbnn_model.tf',
+        path + "ftbnn_model.tf",
         overwrite=True,
         include_optimizer=True,
         save_format='tf',
         signatures=None,
         options=None,
     )
+
+def load_model(path="./"):
+    return tf.keras.models.load_model(path + 'ftbnn_model.tf')
 
 if __name__ == "__main__":
     #required to run on some systems
