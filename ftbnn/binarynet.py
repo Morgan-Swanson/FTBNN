@@ -2,6 +2,7 @@ import tensorflow as tf
 import larq as lq
 import numpy as np
 import matplotlib.pyplot as plt
+from sklearn.model_selection import train_test_split
 
 def preprocess_data():
     num_classes = 10
@@ -63,8 +64,14 @@ def build_model():
         tf.keras.layers.Activation("softmax")
     ])
 
-def train_model(data, model):
-    (train_images, train_labels), (test_images, test_labels) = data
+def train_model(training_data, model, epochs=10):
+    images, labels = training_data
+    train_images, validation_images, train_labels, validation_labels = \
+        train_test_split(images,
+                         labels,
+                         test_size=0.2,
+                         random_state=42,
+                         stratify=labels)
     model.compile(
         tf.keras.optimizers.Adam(lr=0.01, decay=0.0001),
         loss="categorical_crossentropy",
@@ -74,10 +81,17 @@ def train_model(data, model):
         train_images,
         train_labels,
         batch_size=50,
-        epochs=10,
-        validation_data=(test_images, test_labels),
+        epochs=epochs,
+        validation_data=(validation_images, validation_labels),
         shuffle=True
     )
+
+#Todo, Add testing function
+def test_model(testing_data, model):
+    testing_images, testing_labels = testing_data
+    return
+
+
 
 def plot_results(trained_model):
     plt.plot(trained_model.history['accuracy'])
@@ -107,6 +121,9 @@ if __name__ == "__main__":
     config.gpu_options.allow_growth = True
     session = tf.compat.v1.Session(config=config)
     model = build_model()
+    training_data, testing_data = preprocess_data()
+    history = train_model(training_data, model)
     save_model(model)
-    trained_model = train_model(preprocess_data(), model)
     plot_results(trained_model)
+    accuracy = test_model(testing_data, model)
+    print("Test Accuracy:{:.2%}".format(accuracy))
