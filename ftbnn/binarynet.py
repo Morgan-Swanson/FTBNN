@@ -6,7 +6,7 @@ if gpus:
     try:
         tf.config.experimental.set_virtual_device_configuration(
             gpus[0],
-            [tf.config.experimental.VirtualDeviceConfiguration(memory_limit=1024)])
+            [tf.config.experimental.VirtualDeviceConfiguration(memory_limit=2048)])
         logical_gpus = tf.config.experimental.list_logical_devices('GPU')
         print(len(gpus), "Physical GPUs,", len(logical_gpus), "Logical GPUs")
     except RuntimeError as e:
@@ -87,7 +87,6 @@ def train_gan(data, epochs, discriminator, generator):
     discriminator_optimizer = tf.keras.optimizers.Adam(1e-4)
 
     (train_images, train_labels), (validation_images, validation_labels) = data
-    # train_dataset = tf.data.Dataset.from_tensor_slices(train_images).batch(BATCH_SIZE)
 
     for epoch in range(epochs):
         start = time.time()
@@ -98,11 +97,10 @@ def train_gan(data, epochs, discriminator, generator):
             total_loss += train_gan_step(data_batch, BATCH_SIZE, (discriminator, discriminator_optimizer), (generator, generator_optimizer))
 
         #verification?
+        print('Epoch {} took {} sec. Average generated image accuracy is {}'.format(epoch + 1, time.time()-start, total_loss / BATCH_SIZE))
 
-        prediction = generator(seed, training=False)
-        show_image(prediction)
-
-        print ('epoch {} took {} sec. generated image accuracy: {}'.format(epoch + 1, time.time()-start, total_loss / BATCH_SIZE))
+        # prediction = generator(seed, training=False)
+        # show_image(prediction)
 
     # Generate after the final epoch
     prediction = generator(seed, training=False)
@@ -129,91 +127,16 @@ def train_gan_step(images, batch, discriminator_data, generator_data):
 
     generator_optimizer.apply_gradients(zip(gradients_of_generator, generator.trainable_variables))
     discriminator_optimizer.apply_gradients(zip(gradients_of_discriminator, discriminator.trainable_variables))
-    return disc_loss
+    return gen_loss
 
 
 def show_image(predictions):
-    # for i in range(predictions.shape[0]):
-    #     plt.subplot(4, 4, i+1)
-    #     plt.imshow(predictions[i, :, :, 0] * 127.5 + 127.5, cmap='gray')
-    #     plt.axis('off')
     plt.imshow(predictions[0, :, :, 0], cmap='gray')
     plt.axis('off')
 
-    # display.clear_output(wait=True)
     plt.show()
 
 def build_model():
-    # All quantized layers except the first will use the same options
-    # kwargs = dict(input_quantizer="ste_sign",
-    #               kernel_quantizer="ste_sign",
-    #               kernel_constraint="weight_clip",
-    #               use_bias=False)
-    # return tf.keras.models.Sequential([
-    #     # In the first layer we only quantize the weights and not the input
-    #     lq.layers.QuantConv2D(128, 3,
-    #                           kernel_quantizer="ste_sign",
-    #                           kernel_constraint="weight_clip",
-    #                           use_bias=False,
-    #                           input_shape=(32, 32, 1)),
-    #     tf.keras.layers.BatchNormalization(momentum=0.999, scale=False),
-
-    #     lq.layers.QuantConv2D(128, 3, padding="same", **kwargs),
-    #     tf.keras.layers.MaxPool2D(pool_size=(2, 2), strides=(2, 2)),
-    #     tf.keras.layers.BatchNormalization(momentum=0.999, scale=False),
-
-    #     lq.layers.QuantConv2D(256, 3, padding="same", **kwargs),
-    #     tf.keras.layers.BatchNormalization(momentum=0.999, scale=False),
-
-    #     lq.layers.QuantConv2D(256, 3, padding="same", **kwargs),
-    #     tf.keras.layers.MaxPool2D(pool_size=(2, 2), strides=(2, 2)),
-    #     tf.keras.layers.BatchNormalization(momentum=0.999, scale=False),
-
-    #     lq.layers.QuantConv2D(512, 3, padding="same", **kwargs),
-    #     tf.keras.layers.BatchNormalization(momentum=0.999, scale=False),
-
-    #     lq.layers.QuantConv2D(512, 3, padding="same", **kwargs),
-    #     tf.keras.layers.MaxPool2D(pool_size=(2, 2), strides=(2, 2)),
-    #     tf.keras.layers.BatchNormalization(momentum=0.999, scale=False),
-    #     tf.keras.layers.Flatten(),
-
-    #     lq.layers.QuantDense(1024, **kwargs),
-    #     tf.keras.layers.BatchNormalization(momentum=0.999, scale=False),
-
-    #     lq.layers.QuantDense(1024, **kwargs),
-    #     tf.keras.layers.BatchNormalization(momentum=0.999, scale=False),
-
-    #     lq.layers.QuantDense(10, **kwargs),
-    #     tf.keras.layers.BatchNormalization(momentum=0.999, scale=False),
-    #     tf.keras.layers.Activation("softmax")
-    # ])
-    # model = tf.keras.models.Sequential([
-    #     tf.keras.layers.Conv2D(128, (3, 3), use_bias=False, activation='relu', input_shape=(32, 32, 3)),
-    #     tf.keras.layers.BatchNormalization(momentum=0.999, scale=False),
-        
-    #     tf.keras.layers.Conv2D(128, (3, 3), activation='relu'),
-    #     tf.keras.layers.MaxPool2D(2, 2),
-    #     tf.keras.layers.BatchNormalization(momentum=0.999, scale=False),
-
-    #     tf.keras.layers.Conv2D(256, (3, 3), activation='relu'),
-    #     tf.keras.layers.BatchNormalization(momentum=0.999, scale=False),
-
-    #     tf.keras.layers.Conv2D(256, (3, 3), activation='relu'),
-    #     tf.keras.layers.MaxPool2D(pool_size=(2, 2), strides=(2, 2)),
-    #     tf.keras.layers.BatchNormalization(momentum=0.999, scale=False),
-
-    #     tf.keras.layers.Conv2D(512, (3, 3), activation='relu'),
-    #     tf.keras.layers.BatchNormalization(momentum=0.999, scale=False),
-
-    #     tf.keras.layers.Conv2D(512, (3,3), activation='relu'),
-    #     tf.keras.layers.MaxPool2D(pool_size=(2, 2), strides=(2, 2)),
-    #     tf.keras.layers.BatchNormalization(momentum=0.999, scale=False),
-
-    #     tf.keras.layers.Flatten(),
-
-    #     tf.keras.layers.Dense(1024, activation='relu'),
-    #     tf.keras.layers.Dense(10, activation='softmax'),
-    # ])
     model = tf.keras.Sequential()
     model.add(tf.keras.layers.Conv2D(128, (3, 3), use_bias=False, input_shape=(32, 32, 3)))
     model.add(tf.keras.layers.BatchNormalization())
@@ -224,27 +147,28 @@ def build_model():
     model.add(tf.keras.layers.LeakyReLU())
     model.add(tf.keras.layers.MaxPool2D(2, 2))
 
-    model.add(tf.keras.layers.Conv2D(256, (3, 3), use_bias=False, input_shape=(32, 32, 3)))
+    model.add(tf.keras.layers.Dropout(0.3))
+
+    model.add(tf.keras.layers.Conv2D(256, (3, 3)))
     model.add(tf.keras.layers.BatchNormalization())
     model.add(tf.keras.layers.LeakyReLU())
 
-    model.add(tf.keras.layers.Dropout(0.3))
 
     model.add(tf.keras.layers.Conv2D(256, (3, 3)))
     model.add(tf.keras.layers.BatchNormalization())
     model.add(tf.keras.layers.LeakyReLU())
     model.add(tf.keras.layers.MaxPool2D(2, 2))
 
-    model.add(tf.keras.layers.Conv2D(512, (3, 3), use_bias=False, input_shape=(32, 32, 3)))
-    model.add(tf.keras.layers.BatchNormalization())
-    model.add(tf.keras.layers.LeakyReLU())
+    # model.add(tf.keras.layers.Conv2D(512, (3, 3), padding='same'))
+    # model.add(tf.keras.layers.BatchNormalization())
+    # model.add(tf.keras.layers.LeakyReLU())
+
+    # model.add(tf.keras.layers.Conv2D(512, (3, 3), padding='same'))
+    # model.add(tf.keras.layers.BatchNormalization())
+    # model.add(tf.keras.layers.LeakyReLU())
+    # model.add(tf.keras.layers.MaxPool2D(2, 2))
 
     model.add(tf.keras.layers.Dropout(0.3))
-
-    model.add(tf.keras.layers.Conv2D(512, (3, 3)))
-    model.add(tf.keras.layers.BatchNormalization())
-    model.add(tf.keras.layers.LeakyReLU())
-    model.add(tf.keras.layers.MaxPool2D(2, 2))
 
     model.add(tf.keras.layers.Flatten())
 
