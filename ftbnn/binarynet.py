@@ -1,82 +1,73 @@
 import tensorflow as tf
+#this must be done first/BEFORE GPU VIRTUAL DEVICES ARE LOADED
+gpus = tf.config.experimental.list_physical_devices('GPU')
+if gpus:
+# Restrict TensorFlow to only allocate 1GB of memory on the first GPU
+    try:
+        tf.config.experimental.set_virtual_device_configuration(
+            gpus[0],
+            [tf.config.experimental.VirtualDeviceConfiguration(memory_limit=1024)])
+        logical_gpus = tf.config.experimental.list_logical_devices('GPU')
+        print(len(gpus), "Physical GPUs,", len(logical_gpus), "Logical GPUs")
+    except RuntimeError as e:
+        # Virtual devices must be set before GPUs have been initialized
+        print(e)
+
+
 import larq as lq
 import numpy as np
 import matplotlib.pyplot as plt
+from sklearn.model_selection import train_test_split
 import time
-from IPython import display
 
 EPOCHS = 10
+BATCH_SIZE = 50
 noise_dim = 100
 num_examples_to_generate = 16
+model_path = '../models/'
 
 #static seed
 seed = tf.random.normal([num_examples_to_generate, noise_dim])
 
-generator_optimizer = tf.keras.optimizers.Adam(1e-4)
-discriminator_optimizer = tf.keras.optimizers.Adam(1e-4)
+# This method returns a helper function to compute cross entropy loss
+cross_entropy = tf.keras.losses.BinaryCrossentropy(from_logits=True)
+def discriminator_loss(real_output, fake_output):
+    real_loss = cross_entropy(tf.ones_like(real_output), real_output)
+    fake_loss = cross_entropy(tf.zeros_like(fake_output), fake_output)
+    total_loss = real_loss + fake_loss
+    return total_loss
+def generator_loss(fake_output):
+    return cross_entropy(tf.ones_like(fake_output), fake_output)
+
 
 def preprocess_data():
-    num_classes = 10
+   num_classes = 10
 
-    (train_images, train_labels), (test_images, test_labels) = tf.keras.datasets.cifar10.load_data()
+   (train_images, train_labels), (test_images, test_labels) = tf.keras.datasets.cifar10.load_data()
 
-    train_images = train_images.reshape((50000, 32, 32, 3)).astype("float32")
-    test_images = test_images.reshape((10000, 32, 32, 3)).astype("float32")
+   train_images = train_images.reshape((50000, 32, 32, 3)).astype("float32")
+   test_images = test_images.reshape((10000, 32, 32, 3)).astype("float32")
 
-    # Normalize pixel values to be between -1 and 1
-    train_images, test_images = train_images / 127.5 - 1, test_images / 127.5 - 1
+   # Normalize pixel values to be between -1 and 1
+   train_images, test_images = train_images / 127.5 - 1, test_images / 127.5 - 1
 
-    train_labels = tf.keras.utils.to_categorical(train_labels, num_classes)
-    test_labels = tf.keras.utils.to_categorical(test_labels, num_classes)
-    return ((train_images, train_labels), (test_images, test_labels))
+   #generate labels from dataset
+   train_labels = tf.keras.utils.to_categorical(train_labels, num_classes)
+   test_labels = tf.keras.utils.to_categorical(test_labels, num_classes)
 
-def build_model():
-    # All quantized layers except the first will use the same options
-    kwargs = dict(input_quantizer="ste_sign",
-                  kernel_quantizer="ste_sign",
-                  kernel_constraint="weight_clip",
-                  use_bias=False)
-    return tf.keras.models.Sequential([
-        # In the first layer we only quantize the weights and not the input
-        lq.layers.QuantConv2D(128, 3,
-                              kernel_quantizer="ste_sign",
-                              kernel_constraint="weight_clip",
-                              use_bias=False,
-                              input_shape=(32, 32, 3)),
-        tf.keras.layers.BatchNormalization(momentum=0.999, scale=False),
+   #stratify train dataset and reserve test set
+   train_images, validation_images, train_labels, validation_labels = \
+      train_test_split(train_images,
+                        train_labels,
+                        test_size=0.2,
+                        random_state=42,
+                        stratify=train_labels)
 
-        lq.layers.QuantConv2D(128, 3, padding="same", **kwargs),
-        tf.keras.layers.MaxPool2D(pool_size=(2, 2), strides=(2, 2)),
-        tf.keras.layers.BatchNormalization(momentum=0.999, scale=False),
+   return (train_images, train_labels), (validation_images, validation_labels), (test_images, test_labels)
 
-        lq.layers.QuantConv2D(256, 3, padding="same", **kwargs),
-        tf.keras.layers.BatchNormalization(momentum=0.999, scale=False),
+def train_model(training_data, model, epochs=10):
+    (train_images, train_labels), (validation_images, validation_labels) = training_data
 
-        lq.layers.QuantConv2D(256, 3, padding="same", **kwargs),
-        tf.keras.layers.MaxPool2D(pool_size=(2, 2), strides=(2, 2)),
-        tf.keras.layers.BatchNormalization(momentum=0.999, scale=False),
-
-        lq.layers.QuantConv2D(512, 3, padding="same", **kwargs),
-        tf.keras.layers.BatchNormalization(momentum=0.999, scale=False),
-
-        lq.layers.QuantConv2D(512, 3, padding="same", **kwargs),
-        tf.keras.layers.MaxPool2D(pool_size=(2, 2), strides=(2, 2)),
-        tf.keras.layers.BatchNormalization(momentum=0.999, scale=False),
-        tf.keras.layers.Flatten(),
-
-        lq.layers.QuantDense(1024, **kwargs),
-        tf.keras.layers.BatchNormalization(momentum=0.999, scale=False),
-
-        lq.layers.QuantDense(1024, **kwargs),
-        tf.keras.layers.BatchNormalization(momentum=0.999, scale=False),
-
-        lq.layers.QuantDense(10, **kwargs),
-        tf.keras.layers.BatchNormalization(momentum=0.999, scale=False),
-        tf.keras.layers.Activation("softmax")
-    ])
-
-def train_model(data, model):
-    (train_images, train_labels), (test_images, test_labels) = data
     model.compile(
         tf.keras.optimizers.Adam(lr=0.01, decay=0.0001),
         loss="categorical_crossentropy",
@@ -86,30 +77,43 @@ def train_model(data, model):
         train_images,
         train_labels,
         batch_size=50,
-        epochs=EPOCHS,
-        validation_data=(test_images, test_labels),
+        epochs=epochs,
+        validation_data=(validation_images, validation_labels),
         shuffle=True
     )
 
 def train_gan(data, epochs, discriminator, generator):
+    generator_optimizer = tf.keras.optimizers.Adam(1e-4)
+    discriminator_optimizer = tf.keras.optimizers.Adam(1e-4)
+
+    (train_images, train_labels), (validation_images, validation_labels) = data
+    # train_dataset = tf.data.Dataset.from_tensor_slices(train_images).batch(BATCH_SIZE)
 
     for epoch in range(epochs):
         start = time.time()
+        total_loss = 0
 
-        train_step(data, discriminator, generator)
+        array_split = (len(train_images) / BATCH_SIZE) 
+        for data_batch in np.array_split(train_images, array_split):
+            total_loss += train_gan_step(data_batch, BATCH_SIZE, (discriminator, discriminator_optimizer), (generator, generator_optimizer))
 
-        predictions = generator(seed, training=False)
+        #verification?
 
-        show_image(predictions)
+        prediction = generator(seed, training=False)
+        show_image(prediction)
 
-        print ('Time for epoch {} is {} sec'.format(epoch + 1, time.time()-start))
+        print ('epoch {} took {} sec. generated image accuracy: {}'.format(epoch + 1, time.time()-start, total_loss / BATCH_SIZE))
 
     # Generate after the final epoch
-    show_image(predictions)
+    prediction = generator(seed, training=False)
+    show_image(prediction)
 
 @tf.function
-def train_step(images, discriminator, generator):
-    noise = tf.random.normal([50000, noise_dim])
+def train_gan_step(images, batch, discriminator_data, generator_data):
+    (discriminator, discriminator_optimizer) = discriminator_data
+    (generator, generator_optimizer) = generator_data
+
+    noise = tf.random.normal([batch, noise_dim])
 
     with tf.GradientTape() as gen_tape, tf.GradientTape() as disc_tape:
         generated_images = generator(noise, training=True)
@@ -125,61 +129,153 @@ def train_step(images, discriminator, generator):
 
     generator_optimizer.apply_gradients(zip(gradients_of_generator, generator.trainable_variables))
     discriminator_optimizer.apply_gradients(zip(gradients_of_discriminator, discriminator.trainable_variables))
+    return disc_loss
 
 
 def show_image(predictions):
-    for i in range(predictions.shape[0]):
-        plt.subplot(4, 4, i+1)
-        plt.imshow(predictions[i, :, :, 0] * 127.5 + 127.5, cmap='gray')
-        plt.axis('off')
+    # for i in range(predictions.shape[0]):
+    #     plt.subplot(4, 4, i+1)
+    #     plt.imshow(predictions[i, :, :, 0] * 127.5 + 127.5, cmap='gray')
+    #     plt.axis('off')
+    plt.imshow(predictions[0, :, :, 0], cmap='gray')
+    plt.axis('off')
 
-    display.clear_output(wait=True)
+    # display.clear_output(wait=True)
     plt.show()
 
+def build_model():
+    # All quantized layers except the first will use the same options
+    # kwargs = dict(input_quantizer="ste_sign",
+    #               kernel_quantizer="ste_sign",
+    #               kernel_constraint="weight_clip",
+    #               use_bias=False)
+    # return tf.keras.models.Sequential([
+    #     # In the first layer we only quantize the weights and not the input
+    #     lq.layers.QuantConv2D(128, 3,
+    #                           kernel_quantizer="ste_sign",
+    #                           kernel_constraint="weight_clip",
+    #                           use_bias=False,
+    #                           input_shape=(32, 32, 1)),
+    #     tf.keras.layers.BatchNormalization(momentum=0.999, scale=False),
 
+    #     lq.layers.QuantConv2D(128, 3, padding="same", **kwargs),
+    #     tf.keras.layers.MaxPool2D(pool_size=(2, 2), strides=(2, 2)),
+    #     tf.keras.layers.BatchNormalization(momentum=0.999, scale=False),
 
-def make_generator_model():
+    #     lq.layers.QuantConv2D(256, 3, padding="same", **kwargs),
+    #     tf.keras.layers.BatchNormalization(momentum=0.999, scale=False),
+
+    #     lq.layers.QuantConv2D(256, 3, padding="same", **kwargs),
+    #     tf.keras.layers.MaxPool2D(pool_size=(2, 2), strides=(2, 2)),
+    #     tf.keras.layers.BatchNormalization(momentum=0.999, scale=False),
+
+    #     lq.layers.QuantConv2D(512, 3, padding="same", **kwargs),
+    #     tf.keras.layers.BatchNormalization(momentum=0.999, scale=False),
+
+    #     lq.layers.QuantConv2D(512, 3, padding="same", **kwargs),
+    #     tf.keras.layers.MaxPool2D(pool_size=(2, 2), strides=(2, 2)),
+    #     tf.keras.layers.BatchNormalization(momentum=0.999, scale=False),
+    #     tf.keras.layers.Flatten(),
+
+    #     lq.layers.QuantDense(1024, **kwargs),
+    #     tf.keras.layers.BatchNormalization(momentum=0.999, scale=False),
+
+    #     lq.layers.QuantDense(1024, **kwargs),
+    #     tf.keras.layers.BatchNormalization(momentum=0.999, scale=False),
+
+    #     lq.layers.QuantDense(10, **kwargs),
+    #     tf.keras.layers.BatchNormalization(momentum=0.999, scale=False),
+    #     tf.keras.layers.Activation("softmax")
+    # ])
+    # model = tf.keras.models.Sequential([
+    #     tf.keras.layers.Conv2D(128, (3, 3), use_bias=False, activation='relu', input_shape=(32, 32, 3)),
+    #     tf.keras.layers.BatchNormalization(momentum=0.999, scale=False),
+        
+    #     tf.keras.layers.Conv2D(128, (3, 3), activation='relu'),
+    #     tf.keras.layers.MaxPool2D(2, 2),
+    #     tf.keras.layers.BatchNormalization(momentum=0.999, scale=False),
+
+    #     tf.keras.layers.Conv2D(256, (3, 3), activation='relu'),
+    #     tf.keras.layers.BatchNormalization(momentum=0.999, scale=False),
+
+    #     tf.keras.layers.Conv2D(256, (3, 3), activation='relu'),
+    #     tf.keras.layers.MaxPool2D(pool_size=(2, 2), strides=(2, 2)),
+    #     tf.keras.layers.BatchNormalization(momentum=0.999, scale=False),
+
+    #     tf.keras.layers.Conv2D(512, (3, 3), activation='relu'),
+    #     tf.keras.layers.BatchNormalization(momentum=0.999, scale=False),
+
+    #     tf.keras.layers.Conv2D(512, (3,3), activation='relu'),
+    #     tf.keras.layers.MaxPool2D(pool_size=(2, 2), strides=(2, 2)),
+    #     tf.keras.layers.BatchNormalization(momentum=0.999, scale=False),
+
+    #     tf.keras.layers.Flatten(),
+
+    #     tf.keras.layers.Dense(1024, activation='relu'),
+    #     tf.keras.layers.Dense(10, activation='softmax'),
+    # ])
     model = tf.keras.Sequential()
-    model.add(tf.keras.layers.Dense(8*8*256, use_bias=False, input_shape=(100,)))
+    model.add(tf.keras.layers.Conv2D(128, (3, 3), use_bias=False, input_shape=(32, 32, 3)))
     model.add(tf.keras.layers.BatchNormalization())
     model.add(tf.keras.layers.LeakyReLU())
 
-    model.add(tf.keras.layers.Reshape((8, 8, 256)))
-    assert model.output_shape == (None, 8, 8, 256) # Note: None is the batch size
+    model.add(tf.keras.layers.Conv2D(128, (3, 3)))
+    model.add(tf.keras.layers.BatchNormalization())
+    model.add(tf.keras.layers.LeakyReLU())
+    model.add(tf.keras.layers.MaxPool2D(2, 2))
 
-    model.add(tf.keras.layers.Conv2DTranspose(128, (5, 5), strides=(1, 1), padding='same', use_bias=False))
-    assert model.output_shape == (None, 8, 8, 128)
+    model.add(tf.keras.layers.Conv2D(256, (3, 3), use_bias=False, input_shape=(32, 32, 3)))
     model.add(tf.keras.layers.BatchNormalization())
     model.add(tf.keras.layers.LeakyReLU())
 
-    model.add(tf.keras.layers.Conv2DTranspose(64, (5, 5), strides=(2, 2), padding='same', use_bias=False))
-    assert model.output_shape == (None, 16, 16, 64)
+    model.add(tf.keras.layers.Dropout(0.3))
+
+    model.add(tf.keras.layers.Conv2D(256, (3, 3)))
+    model.add(tf.keras.layers.BatchNormalization())
+    model.add(tf.keras.layers.LeakyReLU())
+    model.add(tf.keras.layers.MaxPool2D(2, 2))
+
+    model.add(tf.keras.layers.Conv2D(512, (3, 3), use_bias=False, input_shape=(32, 32, 3)))
     model.add(tf.keras.layers.BatchNormalization())
     model.add(tf.keras.layers.LeakyReLU())
 
-    # model.add(tf.keras.layers.Conv2DTranspose(16, (5, 5), strides=(2, 2), padding='same', use_bias=False))
-    # assert model.output_shape == (None, 32, 32, 16)
-    # model.add(tf.keras.layers.BatchNormalization())
-    # model.add(tf.keras.layers.LeakyReLU())
+    model.add(tf.keras.layers.Dropout(0.3))
 
-    model.add(tf.keras.layers.Conv2DTranspose(1, (5, 5), strides=(2, 2), padding='same', use_bias=False, activation='tanh'))
-    print(model.output_shape)
-    assert model.output_shape == (None, 32, 32, 1)
+    model.add(tf.keras.layers.Conv2D(512, (3, 3)))
+    model.add(tf.keras.layers.BatchNormalization())
+    model.add(tf.keras.layers.LeakyReLU())
+    model.add(tf.keras.layers.MaxPool2D(2, 2))
+
+    model.add(tf.keras.layers.Flatten())
+
+    model.add(tf.keras.layers.Dense(1024))
+    model.add(tf.keras.layers.Dense(10))
+    tf.keras.layers.Activation("softmax")
 
     return model
 
-def make_discriminator_model():
+def make_generator_model():
     model = tf.keras.Sequential()
-    model.add(tf.keras.layers.Conv2D(64, (5, 5), strides=(2, 2), padding='same', input_shape=[32, 32, 1]))
+    model.add(tf.keras.layers.Dense(8*8*48, use_bias=False, input_shape=(100,)))
+    model.add(tf.keras.layers.BatchNormalization())
     model.add(tf.keras.layers.LeakyReLU())
-    model.add(tf.keras.layers.Dropout(0.3))
 
-    model.add(tf.keras.layers.Conv2D(128, (5, 5), strides=(2, 2), padding='same'))
+    model.add(tf.keras.layers.Reshape((8, 8, 48)))
+    assert model.output_shape == (None, 8, 8, 48) # Note: None is the batch size
+
+    model.add(tf.keras.layers.Conv2DTranspose(48, (3,3), strides=(1, 1), padding='same', use_bias=False))
+    assert model.output_shape == (None, 8, 8, 48)
+    model.add(tf.keras.layers.BatchNormalization())
     model.add(tf.keras.layers.LeakyReLU())
-    model.add(tf.keras.layers.Dropout(0.3))
 
-    model.add(tf.keras.layers.Flatten())
-    model.add(tf.keras.layers.Dense(1))
+    model.add(tf.keras.layers.Conv2DTranspose(12, (3,3), strides=(2, 2), padding='same', use_bias=False))
+    assert model.output_shape == (None, 16, 16, 12)
+    model.add(tf.keras.layers.BatchNormalization())
+    model.add(tf.keras.layers.LeakyReLU())
+
+    model.add(tf.keras.layers.Conv2DTranspose(3, (3,3), strides=(2, 2), padding='same', use_bias=False, activation='softmax')) #tanh
+    #print(model.output_shape)
+    assert model.output_shape == (None, 32, 32, 3) #3072 6/512
 
     return model
 
@@ -197,7 +293,7 @@ def plot_results(trained_model):
 def save_model(trained_model):
     tf.keras.models.save_model(
         trained_model,
-        './ftbnn_model.tf',
+        model_path + 'ftbnn_model.tf',
         overwrite=True,
         include_optimizer=True,
         save_format='tf',
@@ -205,42 +301,25 @@ def save_model(trained_model):
         options=None,
     )
 
-def discriminator_loss(real_output, fake_output):
-    real_loss = tf.keras.losses.BinaryCrossentropy(tf.ones_like(real_output), real_output)
-    fake_loss = tf.keras.losses.BinaryCrossentropy(tf.zeros_like(fake_output), fake_output)
-    total_loss = real_loss + fake_loss
-    return total_loss
-
-def generator_loss(fake_output):
-    return tf.keras.losses.BinaryCrossentropy(tf.ones_like(fake_output), fake_output)
-
 if __name__ == "__main__":
-    #required to run on some systems
-    config = tf.compat.v1.ConfigProto()
-    config.gpu_options.allow_growth = True
-    session = tf.compat.v1.Session(config=config)
-
-    #init random noise    
-    noise = tf.random.normal([1, 100])
-
     #init models
+    print('Generating models...')
     generator = make_generator_model()
     discriminator = build_model()
 
-    (train_images, train_labels), (test_images, test_labels) = preprocess_data()
-    
-    train_gan(train_images, EPOCHS, discriminator, generator)
+    print('Loading data...')
+    (train_images, train_labels), \
+    (validation_images, validation_labels), \
+    (test_images, test_labels) = preprocess_data()
 
-
-    # generated_image = generator(noise, training=False)
-    # decision = discriminator(generated_image)
-    # print (decision)
-
-    
-
+    training_data = (train_images, train_labels), (validation_images, validation_labels)
+    train_gan(training_data, EPOCHS, discriminator, generator)
 
 
     # model = build_model()
-    # save_model(model)
-    # trained_model = train_model(data, model)
+    # training_data, testing_data = preprocess_data()
+    # history = train_model(training_data, model)    
     # plot_results(trained_model)
+    # save_model(model)
+    # accuracy = test_model(testing_data, model)
+    # print("Test Accuracy:{:.2%}".format(accuracy))
