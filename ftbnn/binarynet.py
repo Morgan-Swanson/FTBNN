@@ -127,6 +127,11 @@ def plot_results(trained_model):
     print(np.max(trained_model.history['accuracy']))
     print(np.max(trained_model.history['val_accuracy']))
 
+def test_model(testing_data, model):
+    testing_images, testing_labels = testing_data
+    test_loss, test_acc = model.evaluate(testing_images, testing_labels)
+    return test_acc
+
 def save_model(trained_model):
     tf.keras.models.save_model(
         trained_model,
@@ -151,14 +156,14 @@ if __name__ == "__main__":
     (test_images, test_labels) = preprocess_data()
 
     print('Training model...')
-    training_data = (train_images, train_labels)
+    #training_data = (train_images, train_labels)
     #dcgan.train_gan(training_data, BATCH_SIZE, EPOCHS, ftbnn, gan_generator)
-    fgsmgan.train_with_adversarial_pattern(training_data, BATCH_SIZE, EPOCHS, ftbnn, EPSILON)
+    #fgsmgan.train_with_adversarial_pattern(training_data, BATCH_SIZE, EPOCHS, ftbnn, EPSILON)
 
-    # model = build_model()
-    # training_data, testing_data = preprocess_data()
-    # history = train_model(training_data, model)    
-    # plot_results(trained_model)
-    # save_model(model)
-    # accuracy = test_model(testing_data, model)
-    # print("Test Accuracy:{:.2%}".format(accuracy))
+    training_data = train_images, train_labels
+    testing_data = validation_images, validation_labels
+    history = train_model(training_data, ftbnn)
+    plot_results(history)
+    save_model(ftbnn)
+    accuracy = test_model(testing_data, ftbnn)
+    print("Test Accuracy:{:.2%}".format(accuracy))
