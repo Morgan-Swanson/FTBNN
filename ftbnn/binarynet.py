@@ -2,7 +2,7 @@ import tensorflow as tf
 #this must be done first/BEFORE GPU VIRTUAL DEVICES ARE LOADED
 gpus = tf.config.experimental.list_physical_devices('GPU')
 if gpus:
-# Restrict TensorFlow to only allocate 1GB of memory on the first GPU
+# Restrict TensorFlow to only allocate 2GB of memory on the first GPU
     try:
         tf.config.experimental.set_virtual_device_configuration(
             gpus[0],
@@ -18,9 +18,11 @@ import numpy as np
 import matplotlib.pyplot as plt
 from sklearn.model_selection import train_test_split
 import time
-import gan
+import ftbnn.dcgan as dcgan
+import ftbnn.fgsmgan as fgsmgan
 
 EPOCHS = 10
+EPSILON = 0.01
 BATCH_SIZE = 50
 model_path = '../models/'
 
@@ -139,7 +141,7 @@ def save_model(trained_model):
 if __name__ == "__main__":
     #init models
     print('Generating models...')
-    gan_generator = gan.make_dcgan_model()
+    gan_generator = dcgan.make_dcgan_model()
 
     ftbnn = build_model()
 
@@ -148,11 +150,10 @@ if __name__ == "__main__":
     (validation_images, validation_labels), \
     (test_images, test_labels) = preprocess_data()
 
-    training_data = (train_images, train_labels), (validation_images, validation_labels)
-
-    #gan
-    gan.train_gan(training_data, BATCH_SIZE, EPOCHS, ftbnn, gan_generator)
-
+    print('Training model...')
+    training_data = (train_images, train_labels)
+    #dcgan.train_gan(training_data, BATCH_SIZE, EPOCHS, ftbnn, gan_generator)
+    fgsmgan.train_with_adversarial_pattern(training_data, BATCH_SIZE, EPOCHS, ftbnn, EPSILON)
 
     # model = build_model()
     # training_data, testing_data = preprocess_data()
